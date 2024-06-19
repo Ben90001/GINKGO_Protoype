@@ -3,9 +3,24 @@
 
 int main() {
     std::cout<<"-------------------------------Ah shit, here we go again:---------------------------------------"<<std::endl;
-    using Mtx = gko::matrix::Csr<double, int>;
-    using Vec = gko::matrix::Dense<double>;
+    const unsigned int discretization_points = 100;
+
+    using mtx = gko::matrix::Dense<double>;
+
+    const auto exec = gko::ReferenceExecutor::create();
+
+    auto matrix = gko::share(mtx::create(exec, gko::dim<2>(discretization_points)));
     
+   
+
+    std::cout<<"------------------------------At last we emerge victorious!-------------------------------------"<<std::endl;
+    return 0;
+}
+
+
+
+ /*
+    using Vec = gko::matrix::Dense<double>;
     auto exec = gko::ReferenceExecutor::create();   // g++ works upon till here (gcc,clang,g++-14 do NOT: probably just not compiling if not needed or sth like that?)
     auto mtx = gko::initialize<Mtx>({{0.0, 1.0}, {1.0, 0.0}}, exec);
     gko::write(std::cout, mtx);
@@ -14,7 +29,4 @@ int main() {
     auto result = vec->clone();                     //"->": dereference vec and call its method clone()
     mtx->apply(vec, result);
     gko::write(std::cout, result);
-
-    std::cout<<"------------------------------At last we emerge victorious!-------------------------------------"<<std::endl;
-    return 0;
-}
+    */
