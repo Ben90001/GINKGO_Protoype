@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
+
+#NOTE: apple clang 15 is tested according to GINKGO Github, so this should not be necessary
+#NOTE: GINKGO is compiled using apple clang, using gcc would require reinstalling it
+#set(CMAKE_C_COMPILER "/usr/local/bin/gcc-14")
+#set(CMAKE_CXX_COMPILER "/usr/local/bin/gcc-14")
+
 project(gko_protoype)
 
 find_package(Ginkgo REQUIRED)
@@ -18,12 +24,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 enable_testing()
 
 add_executable(
-	main
-	main.cc
+	gko-evaluate-solvers
+	gko-evaluate-solvers.cc
 )
 
 target_link_libraries(
-	main
+	gko-evaluate-solvers
 	Ginkgo::ginkgo
 )
 
