@@ -4,9 +4,9 @@
 #include<chrono>
 
 
- 
+ // implementation using matrix_data -> uses AoS
 template <class MatrixType,typename CoefficientFunction, typename BoundaryTypeFunction>
-std::unique_ptr<MatrixType> diffusion_matrix (const size_t n, const size_t d,
+std::unique_ptr<MatrixType> diffusion_matrix1 (const size_t n, const size_t d,
     CoefficientFunction diffusion_coefficient,
     BoundaryTypeFunction dirichlet_boundary,
     std::shared_ptr<gko::ReferenceExecutor> exec)
@@ -99,16 +99,115 @@ std::unique_ptr<MatrixType> diffusion_matrix (const size_t n, const size_t d,
   }
   //create matrix from data
   //auto stats = pA->compress();
-  size_t nnz = (2*d+1)*N;
-  //auto pA = gko::share(mtx::create(exec,gko::dim<2>(N), nnz/*, mtx::strategy_type::strategy_type("classical")*/)); //? @optimization -> better overload? more exact nnz_size?
   auto pA = mtx::create(exec);                          ///@optimize (line below included)
   pA->read(mtx_data);
 
   return pA;
 }
 
+// implementation using matrix_assembly_data -> uses unordered_map
+template <class MatrixType,typename CoefficientFunction, typename BoundaryTypeFunction>
+std::unique_ptr<MatrixType> diffusion_matrix (const size_t n, const size_t d,
+    CoefficientFunction diffusion_coefficient,
+    BoundaryTypeFunction dirichlet_boundary,
+    std::shared_ptr<gko::ReferenceExecutor> exec)
+{
+  // relevant types
+  //using MatrixEntry = double;
+  using mtx = MatrixType;
 
 
+  // prepare grid information
+  std::vector<std::size_t> sizes(d+1,1);
+  for (int i=1; i<=d; ++i) sizes[i] = sizes[i-1]*n;
+  double mesh_size = 1.0/n;
+  int N = sizes[d];
+
+  // create matrix entries
+  //gko::matrix_assembly_data<> mtx_assembly_data{gko::dim<2>{N}};              ///@changed @perfomance->passing size_t as template parameter to dim significant slowdown (why??)
+  auto mtx_assembly_data = gko::matrix_assembly_data<>{gko::dim<2>(N)};
+  for (std::size_t index=0; index<sizes[d]; index++)
+  {
+    // create multiindex from row number
+    std::vector<std::size_t> multiindex(d,0);
+    auto copiedindex=index;
+    for (int i=d-1; i>=0; i--)
+    {
+      multiindex[i] = copiedindex/sizes[i];
+      copiedindex = copiedindex%sizes[i];
+    }
+    
+    //std::cout << "index=" << index;
+    //for (int i=0; i<d; ++i) std::cout << " " << multiindex[i];
+    //std::cout << std::endl;
+
+    // the current cell
+    std::vector<double> center_position(d);
+    for (int i=0; i<d; ++i) 
+      center_position[i] = multiindex[i]*mesh_size;
+    double center_coefficient = diffusion_coefficient(center_position);
+    double center_matrix_entry = 0.0;
+
+    // loop over all neighbors
+    for (int i=0; i<d; i++)
+    {
+      // down neighbor
+      if (multiindex[i]>0)
+      {
+        // we have a neighbor cell
+        std::vector<double> neighbor_position(center_position);
+        neighbor_position[i] -= mesh_size;
+        double neighbor_coefficient = diffusion_coefficient(neighbor_position);
+        double harmonic_average = 2.0/( (1.0/neighbor_coefficient) + (1.0/center_coefficient) );
+        //pA->entry(index,index-sizes[i]) = -harmonic_average;
+        //mtx_data.nonzeros.emplace_back(index,index-sizes[i], -harmonic_average);                ///@changed
+        mtx_assembly_data.add_value(index, index-sizes[i], -harmonic_average);
+        center_matrix_entry += harmonic_average;
+      }
+      else
+      {
+        // current cell is on the boundary in this direction
+        std::vector<double> neighbor_position(center_position);
+        neighbor_position[i] = 0.0;
+        if (dirichlet_boundary(neighbor_position))
+          center_matrix_entry += center_coefficient*2.0;
+      }
+
+      // up neighbor
+      if (multiindex[i]<n-1)
+      {
+        // we have a neighbor cell
+        std::vector<double> neighbor_position(center_position);
+        neighbor_position[i] += mesh_size;
+        double neighbor_coefficient = diffusion_coefficient(neighbor_position);
+        double harmonic_average = 2.0/( (1.0/neighbor_coefficient) + (1.0/center_coefficient) );
+        //pA->entry(index,index+sizes[i]) = -harmonic_average;                                    
+        //mtx_data.nonzeros.emplace_back(index,index+sizes[i], -harmonic_average);                ///@changed
+        mtx_assembly_data.add_value(index, index+sizes[i], -harmonic_average);
+
+        center_matrix_entry += harmonic_average;
+      }
+      else
+      {
+        // current cell is on the boundary in this direction
+        std::vector<double> neighbor_position(center_position);
+        neighbor_position[i] = 1.0;
+        if (dirichlet_boundary(neighbor_position))
+          center_matrix_entry += center_coefficient*2.0;
+      }
+    }
+
+    // finally the diagonal entry
+    //mtx_data.nonzeros.emplace_back(index,index, center_matrix_entry);                           ///@changed
+    mtx_assembly_data.set_value(index, index, center_matrix_entry);
+  }
+  //create matrix from data
+  //size_t nnz = (2*d+1)*N;
+  auto pA = mtx::create(exec);                          ///@optimize (line below included)
+  pA->read(mtx_assembly_data.get_ordered_data());
+
+  return pA;
+}
 
 
 
